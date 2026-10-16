@@ -46,6 +46,70 @@ function desplegarMastil(modelo, animaciones) {
   mezclador.update(MASTIL_ARRIBA);
 }
 
+// En el modelo las 6 ruedas son una sola pieza (3 mallas: llanta, rin y buje, cada una con las 6).
+// Las separamos repartiendo cada triángulo según su posición (lado y eje), y montamos cada rueda
+// en dos pivotes en su centro: "direccion" gira en vertical (motor de dirección) y "rodadura" la hace rodar.
+const NOMBRES_RUEDAS = {
+  '1,1': 'delantera izquierda', '1,0': 'media izquierda', '1,-1': 'trasera izquierda',
+  '-1,1': 'delantera derecha', '-1,0': 'media derecha', '-1,-1': 'trasera derecha',
+};
+
+function separarRuedas(piezaRuedas) {
+  const grupos = new Map(); // clave "lado,eje" -> { triangulos por malla, caja }
+  const v = new THREE.Vector3();
+  const vertice = new THREE.Vector3();
+  const mallas = piezaRuedas.children.filter((m) => m.isMesh);
+
+  for (const malla of mallas) {
+    const pos = malla.geometry.attributes.position;
+    const indice = malla.geometry.index.array;
+    for (let t = 0; t < indice.length; t += 3) {
+      // Centro del triángulo: lado (+X izquierda) y eje (delante, medio, detrás)
+      v.set(0, 0, 0);
+      for (let k = 0; k < 3; k++) v.add(vertice.fromBufferAttribute(pos, indice[t + k]));
+      v.divideScalar(3);
+      const clave = `${v.x > 0 ? 1 : -1},${v.z > 0.55 ? 1 : v.z < -0.55 ? -1 : 0}`;
+      if (!grupos.has(clave)) grupos.set(clave, { indices: new Map(), caja: new THREE.Box3() });
+      const g = grupos.get(clave);
+      if (!g.indices.has(malla)) g.indices.set(malla, []);
+      g.indices.get(malla).push(indice[t], indice[t + 1], indice[t + 2]);
+      for (let k = 0; k < 3; k++) g.caja.expandByPoint(vertice.fromBufferAttribute(pos, indice[t + k]));
+    }
+  }
+
+  const ruedas = [];
+  for (const [clave, g] of grupos) {
+    const centro = g.caja.getCenter(new THREE.Vector3());
+    const direccion = new THREE.Group();
+    const rodadura = new THREE.Group();
+    direccion.position.copy(centro);
+    direccion.add(rodadura);
+    for (const [malla, indices] of g.indices) {
+      // Comparte los vértices de la malla original; solo cambia qué triángulos dibuja
+      const geo = new THREE.BufferGeometry();
+      for (const [nombre, atributo] of Object.entries(malla.geometry.attributes)) geo.setAttribute(nombre, atributo);
+      geo.setIndex(indices);
+      const parte = new THREE.Mesh(geo, malla.material);
+      parte.position.copy(centro).negate();
+      parte.castShadow = parte.receiveShadow = true;
+      rodadura.add(parte);
+    }
+    piezaRuedas.add(direccion);
+    const [, posicionEje] = clave.split(',').map(Number);
+    ruedas.push({
+      nombre: NOMBRES_RUEDAS[clave],
+      direccion,
+      rodadura,
+      dirige: posicionEje !== 0, // en el rover real solo las 4 de las esquinas tienen dirección
+      x: 0, // posición en el rover; se calcula después de centrar el modelo
+      z: 0,
+      angulo: 0, // ángulo de dirección actual
+    });
+  }
+  for (const m of mallas) piezaRuedas.remove(m);
+  return ruedas;
+}
+
 // Carga el modelo y lo devuelve envuelto en un grupo cuyo origen queda en el suelo,
 // centrado entre las ruedas, con el frente hacia +Z. El modelo ya viene en metros (tamaño real).
 // "entorno" es el mapa de reflejos del cielo para los metales del rover.
@@ -73,9 +137,10 @@ export async function cargarRover(entorno) {
   });
 
   // Apoyamos las ruedas en y = 0 y centramos en planta usando las ruedas como referencia
-  const ruedas = modelo.getObjectByName('Wheels_objs');
+  const piezaRuedas = modelo.getObjectByName('Wheels_objs');
   modelo.updateMatrixWorld(true);
-  const cajaRuedas = new THREE.Box3().setFromObject(ruedas);
+  const cajaRuedas = new THREE.Box3().setFromObject(piezaRuedas);
+  const ruedas = separarRuedas(piezaRuedas);
   const centro = cajaRuedas.getCenter(new THREE.Vector3());
   modelo.position.set(-centro.x, -cajaRuedas.min.y, -centro.z);
 
@@ -87,8 +152,18 @@ export async function cargarRover(entorno) {
   const tam = cajaRuedas.getSize(new THREE.Vector3());
   const radioRueda = tam.y / 2;
   const anchoRueda = 0.4; // aprox. de las ruedas reales de Perseverance
+  // Posición de cada rueda en el rover (x: izquierda, z: delante)
+  rover.updateMatrixWorld(true);
+  const p = new THREE.Vector3();
+  for (const r of ruedas) {
+    rover.worldToLocal(r.direccion.getWorldPosition(p));
+    r.x = p.x;
+    r.z = p.z;
+  }
+
   rover.userData = {
     camaras,
+    ruedas,
     radioRueda,
     anchoRueda,
     // Distancia lateral del centro al centro de la rueda (vía) y del centro a los ejes extremos

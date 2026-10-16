@@ -14,6 +14,7 @@ import { crearPolvo } from './dust.js';
 import { cargarRover } from './rover.js';
 import { crearConduccion } from './conduccion.js';
 import { crearHuellas } from './huellas.js';
+import { actualizarRuedas } from './ruedas.js';
 import { crearPanelMision } from './telemetria/panel.js';
 
 // --- Renderizador ---
@@ -172,6 +173,7 @@ function animar() {
   const dt = Math.min(reloj.getDelta(), 0.05);
   if (rover) {
     conduccion.actualizar(dt);
+    actualizarRuedas(rover, conduccion.estado.velocidad, conduccion.estado.giro, dt);
     dejarHuellas();
     seguirRover();
     if (Math.hypot(rover.position.x - sol.target.position.x, rover.position.z - sol.target.position.z) > 25) {
