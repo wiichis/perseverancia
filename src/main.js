@@ -14,6 +14,7 @@ import { crearPolvo } from './dust.js';
 import { cargarRover } from './rover.js';
 import { crearConduccion } from './conduccion.js';
 import { crearHuellas } from './huellas.js';
+import { crearPanelMision } from './telemetria/panel.js';
 
 // --- Renderizador ---
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -106,6 +107,9 @@ ayuda.className = 'ayuda';
 ayuda.textContent = 'Cargando el rover Perseverance…';
 document.body.appendChild(ayuda);
 
+// --- Control de misión con telemetría real de Percy (tecla T) ---
+crearPanelMision();
+
 // --- Rover, conducción y huellas (el modelo se carga en segundo plano) ---
 let rover = null;
 let conduccion = null;
@@ -123,7 +127,7 @@ cargarRover(entorno)
     anterior.rumbo = conduccion.estado.rumbo;
     // Solo en desarrollo: acceso desde la consola del navegador para explorar y depurar
     if (import.meta.env.DEV) window.perseverance = { rover, conduccion, huellas, camera, controls };
-    ayuda.textContent = 'W/S avanzar y retroceder · A/D girar · arrastra para mirar alrededor';
+    ayuda.textContent = 'W/S avanzar y retroceder · A/D girar · arrastra para mirar · T control de misión';
   })
   .catch((e) => {
     console.error('No se pudo cargar el rover:', e);

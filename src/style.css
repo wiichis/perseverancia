@@ -32,3 +32,131 @@ body::after {
   pointer-events: none;
   z-index: 1;
 }
+
+/* --- Control de misión (tecla T) --- */
+.mision {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  width: 320px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  padding: 12px 14px 10px;
+  border: 1px solid rgba(240, 164, 110, 0.35);
+  border-radius: 10px;
+  background: rgba(26, 11, 5, 0.62);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 8px 30px rgba(20, 6, 0, 0.35);
+  color: #f6dcc2;
+  font: 13px/1.4 system-ui, sans-serif;
+  z-index: 2;
+  transition: transform 0.35s ease, opacity 0.35s ease, visibility 0.35s;
+}
+/* Oculto se desliza fuera de la pantalla; conserva su tamaño para no romper las gráficas */
+.mision.oculto {
+  transform: translateX(calc(100% + 24px));
+  opacity: 0;
+  visibility: hidden;
+}
+.mision-cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(240, 164, 110, 0.25);
+}
+.mision-titulo {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #f0a46e;
+}
+.mision-reloj {
+  font: 12px ui-monospace, Menlo, monospace;
+  color: rgba(246, 220, 194, 0.75);
+}
+.mision kbd {
+  font: 11px ui-monospace, Menlo, monospace;
+  padding: 1px 6px;
+  border: 1px solid rgba(246, 220, 194, 0.4);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+}
+.dato {
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(240, 164, 110, 0.15);
+}
+.dato-cabecera {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+.dato-nombre {
+  font-weight: 600;
+}
+.dato-sello {
+  color: rgba(246, 220, 194, 0.55);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.dato-sello.vivo {
+  color: #ffb27a;
+}
+.dato-sello.vivo::before {
+  content: '●';
+  margin-right: 4px;
+  animation: latido 1.2s ease-in-out infinite;
+}
+@keyframes latido {
+  50% {
+    opacity: 0.25;
+  }
+}
+.dato-fila {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 2px;
+}
+.dato-valor {
+  flex: none;
+  min-width: 104px;
+}
+.dato-numero {
+  font: 600 22px/1.1 ui-monospace, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  color: #fff1e4;
+}
+.dato-unidad {
+  margin-left: 3px;
+  color: rgba(246, 220, 194, 0.7);
+}
+.dato-grafica {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  height: 42px;
+}
+.dato-frase {
+  margin: 4px 0 3px;
+  font-size: 12.5px;
+  color: rgba(246, 220, 194, 0.88);
+}
+.dato-proveedor {
+  font: 10px ui-monospace, Menlo, monospace;
+  color: rgba(246, 220, 194, 0.45);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dato[data-estado='error'] .dato-sello {
+  color: #ff8a7a;
+}
+.mision-pie {
+  padding-top: 8px;
+  font-size: 10px;
+  color: rgba(246, 220, 194, 0.45);
+}
