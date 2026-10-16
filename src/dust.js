@@ -38,17 +38,22 @@ export function crearPolvo(cantidad = 2500, ancho = 140, alto = 18) {
     })
   );
 
-  // Mueve el polvo con el viento y lo recicla dentro de la caja (coordenadas locales)
-  puntos.userData.actualizar = (dt) => {
+  // Mueve el polvo con el viento y lo recicla dentro de una caja centrada en "centro"
+  // (coordenadas del mundo): así siempre hay polvo alrededor del rover sin que viaje con él
+  const abajo = 2;
+  puntos.userData.actualizar = (dt, centro) => {
     const p = geo.attributes.position;
+    const mitad = ancho / 2;
     for (let i = 0; i < cantidad; i++) {
       let x = p.getX(i) + dt * 2.2;
       let y = p.getY(i) + Math.sin((x + i) * 0.3) * dt * 0.15;
       let z = p.getZ(i) + dt * 0.8;
-      if (x > ancho / 2) x -= ancho;
-      if (z > ancho / 2) z -= ancho;
-      if (y < 0) y += alto;
-      if (y > alto) y -= alto;
+      if (x - centro.x > mitad) x -= ancho;
+      if (x - centro.x < -mitad) x += ancho;
+      if (z - centro.z > mitad) z -= ancho;
+      if (z - centro.z < -mitad) z += ancho;
+      if (y - centro.y < -abajo) y += alto;
+      if (y - centro.y > alto - abajo) y -= alto;
       p.setXYZ(i, x, y, z);
     }
     p.needsUpdate = true;

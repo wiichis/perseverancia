@@ -18,3 +18,17 @@ body::after {
   pointer-events: none;
   background: radial-gradient(ellipse at center, transparent 55%, rgba(40, 15, 5, 0.45) 100%);
 }
+
+/* Indicaciones de manejo */
+.ayuda {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(30, 12, 4, 0.55);
+  color: #f6dcc2;
+  font: 14px/1.4 system-ui, sans-serif;
+  pointer-events: none;
+  z-index: 1;
+}
