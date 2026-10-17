@@ -1,7 +1,9 @@
-// Conducción del rover con WASD: avanza, retrocede y gira sobre sí mismo,
-// apoyando las seis ruedas en el terreno (cabeceo y alabeo según el suelo)
+// Conducción del rover con WASD: avanza, retrocede y gira sobre sí mismo.
+// Las ruedas se apoyan en el suelo y en las rocas con la suspensión rocker-bogie (suspension.js).
+// Antes de cada movimiento se prueba la nueva posición: si una rueda tendría que subir una roca
+// más alta de lo que puede, o la panza chocaría con una, el rover choca y rebota.
 import * as THREE from 'three';
-import { alturaSuelo } from './terrain.js';
+import { crearSuspension } from './suspension.js';
 
 // Velocidades de juego: el Perseverance real va a ~4 cm/s, aquí lo aceleramos
 const VEL_MAX = 4; // m/s
@@ -10,51 +12,40 @@ const FRENADO = 5; // m/s² al soltar las teclas
 const GIRO = 0.9; // rad/s
 const RADIO_LIMITE = 210; // no salir hacia las montañas del horizonte
 
+// Choques: el rocker-bogie supera obstáculos casi tan altos como el diámetro de sus ruedas (52 cm)
+export const ESCALON_MAX = 0.45; // m que puede subir una rueda sobre el suelo
+const REBOTE = 0.25; // fracción de la velocidad que conserva al rebotar (coeficiente de restitución)
+const VEL_MIN_REBOTE = 0.4; // m/s: por debajo, el choque solo frena (empuja la roca sin rebotar)
+
 const teclas = new Set();
 window.addEventListener('keydown', (e) => teclas.add(e.code));
 window.addEventListener('keyup', (e) => teclas.delete(e.code));
 window.addEventListener('blur', () => teclas.clear());
 
-export function crearConduccion(rover, x = 0, z = 0, rumbo = Math.PI) {
-  const { via, eje } = rover.userData;
+// alChocar(info) se llama en cada choque con { tipo: 'rueda' | 'panza', velocidad, roca }
+// (roca: altura en metros de la roca sobre el suelo)
+export function crearConduccion(rover, x = 0, z = 0, rumbo = Math.PI, alChocar = () => {}) {
+  const suspension = crearSuspension(rover);
   const estado = { x, z, rumbo, velocidad: 0, giro: 0 };
 
-  const adelante = new THREE.Vector3();
-  const izquierda = new THREE.Vector3();
-  const arriba = new THREE.Vector3();
-  const matriz = new THREE.Matrix4();
-  const objetivo = new THREE.Quaternion();
+  let actual = suspension.evaluar(x, z, rumbo);
+  suspension.aplicar(actual, 1 / 60, 1);
 
-  // Coloca el rover sobre el suelo. "suave" (0..1) interpola desde la pose anterior.
-  function apoyar(suave) {
-    const s = Math.sin(estado.rumbo);
-    const c = Math.cos(estado.rumbo);
-    // El frente del modelo es +Z local y su izquierda +X local
-    const alto = (adelanteM, izquierdaM) =>
-      alturaSuelo(estado.x + s * adelanteM + c * izquierdaM, estado.z + c * adelanteM - s * izquierdaM);
+  // Sacudida del cuerpo al chocar: oscilación amortiguada en cabeceo (rad)
+  const sacudida = { amplitud: 0, t: 0 };
 
-    // Altura del suelo bajo las cuatro ruedas de las esquinas
-    const di = alto(eje, via);
-    const dd = alto(eje, -via);
-    const ti = alto(-eje, via);
-    const td = alto(-eje, -via);
-
-    // Pendiente hacia delante y hacia la izquierda (el balancín reparte las diferencias)
-    const pendAdelante = (di + dd - ti - td) / 2 / (2 * eje);
-    const pendIzquierda = (di + ti - dd - td) / 2 / (2 * via);
-    adelante.set(s, pendAdelante, c).normalize();
-    izquierda.set(c, pendIzquierda, -s).normalize();
-    arriba.crossVectors(adelante, izquierda).normalize();
-    izquierda.crossVectors(arriba, adelante);
-    objetivo.setFromRotationMatrix(matriz.makeBasis(izquierda, arriba, adelante));
-
-    const y = (di + dd + ti + td) / 4;
-    rover.position.set(estado.x, THREE.MathUtils.lerp(rover.position.y, y, suave), estado.z);
-    rover.quaternion.slerp(objetivo, suave);
+  // ¿El movimiento a "nuevo" choca con una roca? Solo cuenta si empeora la situación actual,
+  // así el rover siempre puede retroceder o girar para salir.
+  function choque(nuevo) {
+    for (let i = 0; i < nuevo.elevaciones.length; i++) {
+      const e = nuevo.elevaciones[i];
+      if (e > ESCALON_MAX && e > actual.elevaciones[i] + 1e-3) {
+        return { tipo: 'rueda', roca: nuevo.roca };
+      }
+    }
+    if (nuevo.panza > 0 && nuevo.panza > actual.panza + 1e-3) return { tipo: 'panza', roca: nuevo.roca };
+    return null;
   }
-
-  rover.position.y = alturaSuelo(x, z);
-  apoyar(1);
 
   // Avanza la simulación dt segundos
   function actualizar(dt) {
@@ -72,11 +63,11 @@ export function crearConduccion(rover, x = 0, z = 0, rumbo = Math.PI) {
 
     // Giro con inercia leve; A siempre gira a la izquierda del rover
     estado.giro = THREE.MathUtils.damp(estado.giro, girar * GIRO, 6, dt);
-    estado.rumbo += estado.giro * dt;
 
+    const nuevoRumbo = estado.rumbo + estado.giro * dt;
     const paso = estado.velocidad * dt;
-    let nx = estado.x + Math.sin(estado.rumbo) * paso;
-    let nz = estado.z + Math.cos(estado.rumbo) * paso;
+    let nx = estado.x + Math.sin(nuevoRumbo) * paso;
+    let nz = estado.z + Math.cos(nuevoRumbo) * paso;
     // Límite circular de la zona explorable
     const d = Math.hypot(nx, nz);
     if (d > RADIO_LIMITE) {
@@ -84,10 +75,36 @@ export function crearConduccion(rover, x = 0, z = 0, rumbo = Math.PI) {
       nz *= RADIO_LIMITE / d;
       estado.velocidad = 0;
     }
-    estado.x = nx;
-    estado.z = nz;
 
-    apoyar(1 - Math.exp(-dt * 10));
+    // Se prueba la nueva posición antes de moverse
+    const nuevo = suspension.evaluar(nx, nz, nuevoRumbo);
+    const golpe = choque(nuevo);
+    if (golpe) {
+      // Choque: no avanza; rebota hacia atrás si iba rápido, y el cuerpo se sacude
+      const impacto = Math.abs(estado.velocidad);
+      if (impacto > VEL_MIN_REBOTE) {
+        sacudida.amplitud = Math.min(0.012 * impacto, 0.05) * Math.sign(estado.velocidad);
+        sacudida.t = 0;
+      }
+      estado.velocidad = impacto > VEL_MIN_REBOTE ? -estado.velocidad * REBOTE : 0;
+      estado.giro = 0;
+      alChocar({ ...golpe, velocidad: impacto });
+    } else {
+      actual = nuevo;
+      estado.x = nx;
+      estado.z = nz;
+      estado.rumbo = nuevoRumbo;
+    }
+
+    // Sacudida: por inercia el cuerpo cabecea hacia el choque y oscila sobre la suspensión
+    let cabeceo = 0;
+    if (sacudida.amplitud !== 0) {
+      sacudida.t += dt;
+      cabeceo = -sacudida.amplitud * Math.exp(-sacudida.t * 5) * Math.sin(sacudida.t * 22);
+      if (sacudida.t > 1.2) sacudida.amplitud = 0;
+    }
+
+    suspension.aplicar(actual, dt, 1 - Math.exp(-dt * 10), cabeceo);
   }
 
   return { estado, actualizar };

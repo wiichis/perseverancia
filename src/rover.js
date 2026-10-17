@@ -110,6 +110,126 @@ function separarRuedas(piezaRuedas) {
   return ruedas;
 }
 
+// La suspensión del modelo es una sola pieza con ~220 partes sueltas (brazos, ejes, uniones).
+// Se reparten entre el rocker y el bogie de cada lado según dónde está cada parte, y cada uno
+// se monta en un pivote sobre su eje real, para que giren cuando las ruedas suben y bajan.
+// Ejes medidos en el modelo (coordenadas del rover: y arriba, z delante)
+const EJE_ROCKER = { y: 0.89, z: 0.24 }; // donde el rocker se une al cuerpo
+const EJE_BOGIE = { y: 0.66, z: -0.51 }; // donde el bogie se une al rocker
+
+// Partes conectadas de una malla: triángulos que comparten vértices (en la misma posición)
+function islas(geo) {
+  const pos = geo.attributes.position;
+  const padre = Array.from({ length: pos.count }, (_, i) => i);
+  const raiz = (i) => {
+    while (padre[i] !== i) i = padre[i] = padre[padre[i]];
+    return i;
+  };
+  const unir = (a, b) => (padre[raiz(a)] = raiz(b));
+  const vistos = new Map();
+  for (let i = 0; i < pos.count; i++) {
+    const clave = `${Math.round(pos.getX(i) * 1e4)},${Math.round(pos.getY(i) * 1e4)},${Math.round(pos.getZ(i) * 1e4)}`;
+    if (vistos.has(clave)) unir(i, vistos.get(clave));
+    else vistos.set(clave, i);
+  }
+  const indice = geo.index.array;
+  for (let t = 0; t < indice.length; t += 3) {
+    unir(indice[t], indice[t + 1]);
+    unir(indice[t], indice[t + 2]);
+  }
+  return raiz;
+}
+
+function separarSuspension(rover, ruedas) {
+  const pieza = rover.getObjectByName('suspension');
+  rover.updateMatrixWorld(true);
+  const aRover = rover.matrixWorld.clone().invert().multiply(pieza.matrixWorld);
+  const aPieza = aRover.clone().invert();
+
+  // Pivotes de cada lado (+1 izquierda, -1 derecha), en coordenadas de la pieza
+  const lados = {};
+  for (const signo of [1, -1]) {
+    const ejeRocker = new THREE.Vector3(signo * 0.85, EJE_ROCKER.y, EJE_ROCKER.z).applyMatrix4(aPieza);
+    const ejeBogie = new THREE.Vector3(signo * 0.85, EJE_BOGIE.y, EJE_BOGIE.z).applyMatrix4(aPieza);
+    const rocker = new THREE.Group();
+    const bogie = new THREE.Group();
+    rocker.position.copy(ejeRocker);
+    bogie.position.subVectors(ejeBogie, ejeRocker);
+    rocker.add(bogie);
+    pieza.add(rocker);
+    lados[signo] = { rocker, bogie, origen: { rocker: ejeRocker, bogie: ejeBogie } };
+  }
+
+  // ¿A qué parte pertenece una pieza con centro c (coordenadas del rover)?
+  function parteDe(c) {
+    if (c.y > 1.05) return 'cuerpo'; // diferencial y sus bielas, sobre el cuerpo
+    // Actuadores y ejes junto a una rueda: van con el brazo que sostiene esa rueda
+    let cercana = null;
+    let distancia = Infinity;
+    for (const r of ruedas) {
+      const d = Math.hypot(c.x - r.x, c.z - r.z);
+      if (d < distancia) [cercana, distancia] = [r, d];
+    }
+    if (distancia < 0.3 && c.y < 0.9) return cercana.z > 0.55 ? 'rocker' : 'bogie';
+    if (c.z > 0) return 'rocker';
+    // Detrás: el bogie es lo bajo (brazo a la rueda del medio) y lo de cerca de su eje y atrás
+    return c.z < -0.45 || c.y < 0.62 ? 'bogie' : 'rocker';
+  }
+
+  const centro = new THREE.Vector3();
+  const v = new THREE.Vector3();
+  for (const malla of pieza.children.filter((m) => m.isMesh)) {
+    const geo = malla.geometry;
+    const pos = geo.attributes.position;
+    const indice = geo.index.array;
+    const raiz = islas(geo);
+
+    // Caja de cada parte suelta
+    const cajas = new Map();
+    for (let i = 0; i < pos.count; i++) {
+      const r = raiz(i);
+      if (!cajas.has(r)) cajas.set(r, new THREE.Box3());
+      cajas.get(r).expandByPoint(v.fromBufferAttribute(pos, i).applyMatrix4(malla.matrix).applyMatrix4(aRover));
+    }
+    const destino = new Map();
+    for (const [r, caja] of cajas) {
+      caja.getCenter(centro);
+      const parte = parteDe(centro);
+      destino.set(r, parte === 'cuerpo' ? 'cuerpo' : `${Math.sign(centro.x)},${parte}`);
+    }
+
+    // Triángulos por destino; los del cuerpo se quedan en la malla original
+    const porDestino = new Map();
+    for (let t = 0; t < indice.length; t += 3) {
+      const d = destino.get(raiz(indice[t]));
+      if (!porDestino.has(d)) porDestino.set(d, []);
+      porDestino.get(d).push(indice[t], indice[t + 1], indice[t + 2]);
+    }
+    for (const [d, indices] of porDestino) {
+      if (d === 'cuerpo') continue;
+      const [signo, parte] = d.split(',');
+      const lado = lados[Number(signo)];
+      const nueva = new THREE.BufferGeometry();
+      for (const [nombre, atributo] of Object.entries(geo.attributes)) nueva.setAttribute(nombre, atributo);
+      nueva.setIndex(indices);
+      const copia = new THREE.Mesh(nueva, malla.material);
+      copia.castShadow = copia.receiveShadow = true;
+      copia.position.copy(malla.position).sub(lado.origen[parte]);
+      copia.quaternion.copy(malla.quaternion);
+      copia.scale.copy(malla.scale);
+      lado[parte].add(copia);
+    }
+    geo.setIndex(porDestino.get('cuerpo') ?? []);
+  }
+
+  return {
+    ejeRocker: EJE_ROCKER.z,
+    ejeBogie: EJE_BOGIE.z,
+    izquierda: { rocker: lados[1].rocker, bogie: lados[1].bogie },
+    derecha: { rocker: lados[-1].rocker, bogie: lados[-1].bogie },
+  };
+}
+
 // Carga el modelo y lo devuelve envuelto en un grupo cuyo origen queda en el suelo,
 // centrado entre las ruedas, con el frente hacia +Z. El modelo ya viene en metros (tamaño real).
 // "entorno" es el mapa de reflejos del cielo para los metales del rover.
@@ -164,6 +284,7 @@ export async function cargarRover(entorno) {
   rover.userData = {
     camaras,
     ruedas,
+    suspension: separarSuspension(rover, ruedas), // rocker y bogie de cada lado, con sus ejes
     radioRueda,
     anchoRueda,
     // Distancia lateral del centro al centro de la rueda (vía) y del centro a los ejes extremos

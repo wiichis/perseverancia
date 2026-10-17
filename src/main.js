@@ -1,5 +1,6 @@
 // Perseverance en Marte: paisaje cinematográfico (dunas, rocas, cielo caramelo, polvo, sol de tarde
 // y dos lunas) con el rover oficial de la NASA, conducible con WASD, que deja huellas
+// y cuyas cámaras toman fotos reales de Marte
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -12,10 +13,12 @@ import { crearCielo } from './sky.js';
 import { crearLunas } from './moons.js';
 import { crearPolvo } from './dust.js';
 import { cargarRover } from './rover.js';
-import { crearConduccion } from './conduccion.js';
+import { crearConduccion, ESCALON_MAX } from './conduccion.js';
 import { crearHuellas } from './huellas.js';
 import { actualizarRuedas } from './ruedas.js';
 import { crearPanelMision } from './telemetria/panel.js';
+import { crearPuntosCamaras } from './camaras/puntos.js';
+import { ponerRotulo } from './rotulo.js';
 
 // --- Renderizador ---
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -108,27 +111,48 @@ ayuda.className = 'ayuda';
 ayuda.textContent = 'Cargando el rover Perseverance…';
 document.body.appendChild(ayuda);
 
+// --- Aviso al chocar con una roca (como mucho uno cada pocos segundos) ---
+const aviso = document.createElement('div');
+aviso.className = 'aviso';
+document.body.appendChild(aviso);
+let ultimoAviso = 0;
+function avisarChoque({ tipo, roca }) {
+  if (performance.now() - ultimoAviso < 2500) return;
+  ultimoAviso = performance.now();
+  const cm = (m) => Math.round(m * 100);
+  aviso.textContent =
+    tipo === 'rueda'
+      ? `¡Choque! Roca de ${cm(roca)} cm: las ruedas de Percy solo suben rocas de hasta ${cm(ESCALON_MAX)} cm`
+      : `¡Choque! Roca de ${cm(roca)} cm: golpearía la panza del rover (está a 60 cm del suelo)`;
+  aviso.classList.remove('visible');
+  void aviso.offsetWidth; // reinicia la animación
+  aviso.classList.add('visible');
+}
+
 // --- Control de misión con telemetría real de Percy (tecla T) ---
 crearPanelMision();
 
-// --- Rover, conducción y huellas (el modelo se carga en segundo plano) ---
+// --- Rover, conducción, huellas y cámaras (el modelo se carga en segundo plano) ---
 let rover = null;
 let conduccion = null;
 let huellas = null;
+let camaras = null;
 const anterior = { posicion: new THREE.Vector3(), rumbo: 0 };
 
 cargarRover(entorno)
   .then((modelo) => {
     rover = modelo;
+    ponerRotulo(rover, 'wiichiz'); // letras en la parte de atrás
     scene.add(rover);
-    conduccion = crearConduccion(rover, INICIO.x, INICIO.z, INICIO.rumbo);
+    conduccion = crearConduccion(rover, INICIO.x, INICIO.z, INICIO.rumbo, avisarChoque);
     huellas = crearHuellas(rover.userData.anchoRueda);
     scene.add(huellas);
+    camaras = crearPuntosCamaras(rover, camera);
     anterior.posicion.copy(rover.position);
     anterior.rumbo = conduccion.estado.rumbo;
     // Solo en desarrollo: acceso desde la consola del navegador para explorar y depurar
-    if (import.meta.env.DEV) window.perseverance = { rover, conduccion, huellas, camera, controls };
-    ayuda.textContent = 'W/S avanzar y retroceder · A/D girar · arrastra para mirar · T control de misión';
+    if (import.meta.env.DEV) window.perseverance = { rover, conduccion, huellas, camaras, camera, controls };
+    ayuda.textContent = 'W/S avanzar y retroceder · A/D girar · arrastra para mirar · clic en un punto brillante: foto · T control de misión';
   })
   .catch((e) => {
     console.error('No se pudo cargar el rover:', e);
@@ -182,6 +206,7 @@ function animar() {
   }
   controls.update();
   camaraSobreSuelo();
+  camaras?.actualizar();
   cielo.position.copy(camera.position);
   polvo.userData.actualizar(dt, controls.target);
   composer.render();

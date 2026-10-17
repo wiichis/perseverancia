@@ -160,3 +160,334 @@ body::after {
   font-size: 10px;
   color: rgba(246, 220, 194, 0.45);
 }
+
+/* --- Cámaras de Percy: puntos que brillan sobre el rover --- */
+.camaras {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+.camara-punto {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px; /* el centro del punto queda sobre la cámara */
+  padding: 0;
+  border: 2px solid rgba(255, 244, 228, 0.95);
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff 0 22%, #ffbe85 45%, rgba(255, 140, 70, 0.3) 72%);
+  cursor: pointer;
+  pointer-events: auto;
+  animation: brillo 1.8s ease-in-out infinite;
+  transition: opacity 0.3s;
+}
+@keyframes brillo {
+  0%,
+  100% {
+    box-shadow: 0 0 6px 2px rgba(255, 170, 100, 0.65);
+  }
+  50% {
+    box-shadow: 0 0 16px 6px rgba(255, 196, 140, 0.95);
+  }
+}
+/* Detrás de alguna pieza del rover: más tenue, pero se puede pulsar igual */
+.camara-punto.tapado {
+  opacity: 0.4;
+}
+.camara-punto:hover,
+.camara-punto:focus-visible {
+  opacity: 1;
+  outline: none;
+}
+/* Onda al disparar */
+.camara-punto::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  opacity: 0;
+  pointer-events: none;
+}
+.camara-punto.disparo::after {
+  animation: onda 0.6s ease-out;
+}
+@keyframes onda {
+  from {
+    transform: scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+.camara-nombre {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  transform: translateX(-50%) translateY(4px);
+  padding: 5px 9px;
+  border-radius: 6px;
+  background: rgba(26, 11, 5, 0.82);
+  color: #f6dcc2;
+  font: 12px/1.3 system-ui, sans-serif;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s, transform 0.15s;
+}
+.camara-nombre b {
+  color: #ffb27a;
+}
+.camara-punto:hover .camara-nombre,
+.camara-punto:focus-visible .camara-nombre {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* --- Flash del obturador --- */
+.flash {
+  position: fixed;
+  inset: 0;
+  background: #fffaf2;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 20;
+}
+.flash.activo {
+  animation: flash 0.7s ease-out;
+}
+@keyframes flash {
+  from {
+    opacity: 0.95;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* --- Visor de fotos de Marte --- */
+.visor {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: rgba(18, 7, 2, 0.74);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  color: #f6dcc2;
+  font: 14px/1.4 system-ui, sans-serif;
+  z-index: 10;
+}
+.visor[hidden] {
+  display: none;
+}
+.visor-foto {
+  margin: 0;
+}
+/* Tamaño fijo (proporción de las fotos de Percy) para que nada salte mientras llega la foto */
+.visor-marco {
+  position: relative;
+  width: min(86vw, 72vh * 1.373, 1200px);
+  aspect-ratio: 1648 / 1200;
+  overflow: hidden;
+  border: 1px solid rgba(240, 164, 110, 0.4);
+  border-radius: 6px;
+  background: #120804;
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.55);
+}
+.visor-imagen {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover; /* llena el marco; ampliada se ve completa */
+  cursor: zoom-in;
+  user-select: none;
+  /* Antes de revelarse: sin líneas recibidas, borrosa y quemada */
+  clip-path: inset(0 0 100% 0);
+  filter: blur(18px) brightness(1.9) saturate(0.1);
+  opacity: 0;
+}
+/* Revelado: las líneas llegan de arriba abajo y la imagen se enfoca y toma color */
+.visor-marco[data-estado='revelando'] .visor-imagen,
+.visor-marco[data-estado='revelada'] .visor-imagen {
+  clip-path: inset(0 0 0 0);
+  filter: none;
+  opacity: 1;
+  transition: clip-path 1.6s linear, opacity 0.3s ease, filter 2.3s ease-out 0.3s;
+}
+/* Línea de escaneo que acompaña la llegada de la foto */
+.visor-marco::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, #ffd2a8 20%, #fff 50%, #ffd2a8 80%, transparent);
+  box-shadow: 0 0 14px 4px rgba(255, 190, 130, 0.7);
+  opacity: 0;
+  pointer-events: none;
+}
+.visor-marco[data-estado='revelando']::after {
+  animation: escaneo 1.6s linear forwards;
+}
+@keyframes escaneo {
+  from {
+    top: 0;
+    opacity: 1;
+  }
+  95% {
+    opacity: 1;
+  }
+  to {
+    top: 100%;
+    opacity: 0;
+  }
+}
+.visor-espera {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font: 13px ui-monospace, Menlo, monospace;
+  letter-spacing: 0.06em;
+  color: #ffb27a;
+  animation: latido 1.2s ease-in-out infinite;
+}
+.visor-marco[data-estado='revelando'] .visor-espera,
+.visor-marco[data-estado='revelada'] .visor-espera {
+  display: none;
+}
+.visor-foto figcaption {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding: 10px 2px 0;
+}
+.visor-titulo {
+  font-size: 17px;
+}
+.visor-titulo b {
+  color: #ffb27a;
+}
+.visor-pie {
+  font: 11px ui-monospace, Menlo, monospace;
+  color: rgba(246, 220, 194, 0.6);
+  white-space: nowrap;
+}
+.visor-pie a {
+  color: #ffb27a;
+}
+.visor-ayuda {
+  font-size: 12px;
+  color: rgba(246, 220, 194, 0.7);
+}
+.visor kbd {
+  font: 11px ui-monospace, Menlo, monospace;
+  padding: 1px 6px;
+  border: 1px solid rgba(246, 220, 194, 0.4);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+}
+.visor-flecha {
+  position: absolute;
+  top: 50%;
+  width: 44px;
+  height: 64px;
+  margin-top: -32px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(26, 11, 5, 0.55);
+  color: #f6dcc2;
+  font: 36px/1 system-ui, sans-serif;
+  cursor: pointer;
+  z-index: 1;
+}
+.visor-flecha:hover {
+  background: rgba(60, 26, 10, 0.8);
+}
+.visor-flecha.anterior {
+  left: 16px;
+}
+.visor-flecha.siguiente {
+  right: 16px;
+}
+
+/* Ampliada: la foto ocupa toda la pantalla y el texto queda encima, abajo */
+.visor.ampliada {
+  background: #000;
+}
+.visor.ampliada .visor-marco {
+  width: 100vw;
+  height: 100vh;
+  aspect-ratio: auto;
+  border: none;
+  border-radius: 0;
+  background: #000;
+}
+.visor.ampliada .visor-imagen {
+  object-fit: contain;
+  cursor: zoom-out;
+}
+.visor.ampliada figcaption {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 28px 20px 14px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.75));
+}
+.visor.ampliada .visor-ayuda {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+/* --- Aviso de choque con una roca --- */
+.aviso {
+  position: fixed;
+  left: 50%;
+  top: 18px;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 32px);
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 138, 122, 0.5);
+  border-radius: 8px;
+  background: rgba(40, 10, 4, 0.78);
+  color: #ffd9c9;
+  font: 13px/1.4 system-ui, sans-serif;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 3;
+}
+.aviso.visible {
+  animation: aviso 3s ease forwards;
+}
+@keyframes aviso {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-8px);
+  }
+  8%,
+  80% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  100% {
+    opacity: 0;
+  }
+}
